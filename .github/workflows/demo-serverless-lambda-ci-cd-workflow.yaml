@@ -1,0 +1,56 @@
+name: demo-serverless-lambda-ci-cd-workflow
+
+run-name: "${{ github.actor }}-${{ github.run_id }}-${{ github.event_name }}-${{ inputs.environment || 'sandbox' }}-ci-cd-lambda"
+
+concurrency: 
+  group: default 
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        options:
+          - 'sandbox'
+          - 'development'
+        required: true
+        default: 'sandbox'
+
+jobs:
+  continuos_integration_job:
+    uses: ./.github/workflows/demo-serverless-ci-workflow.yaml
+    with:
+      infraestructure_target: 'Lambda'
+      node_version: ${{ inputs.infraestructure == 'Lambda' && '14.x' || '18.x' }} #FIX For educational use only
+    secrets: inherit
+
+  continuos-deployment-job:
+    environment: ${{ inputs.environment || 'sandbox' }}
+    needs: continuos_integration_job
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Download artifact from build job
+      uses: actions/download-artifact@v4
+      with:
+       name: ${{ needs.continuos_integration_job.outputs.artifact_base_name }}-ci
+
+    - name: "Deploy stage"
+      run: echo "Deploy started!"
+    
+    - name: Setup AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-2
+    
+    - run: aws lambda update-function-code --function-name=AWS-user-group-example --zip-file=fileb://${{ needs.continuos_integration_job.outputs.artifact_base_name }}.zip
